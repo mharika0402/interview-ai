@@ -11,6 +11,40 @@ if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'your-groq-api-key-
 
 const MODEL = 'openai/gpt-oss-120b';
 
+// Safe JSON parser - handles common AI JSON issues
+function safeJsonParse(text) {
+  // First try direct parse
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    // Try to extract JSON from text
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    let jsonStr = jsonMatch[0];
+
+    // Fix common AI JSON mistakes:
+    // 1. Remove trailing commas before } or ]
+    jsonStr = jsonStr.replace(/,\s*([}\]])/g, '$1');
+    // 2. Fix single quotes to double quotes
+    jsonStr = jsonStr.replace(/'/g, '"');
+    // 3. Fix missing quotes around keys
+    jsonStr = jsonStr.replace(/(\{|,)\s*(\w+)\s*:/g, '$1"$2":');
+    // 4. Remove comments
+    jsonStr = jsonStr.replace(/\/\/.*$/gm, '');
+    // 5. Fix newlines in strings
+    jsonStr = jsonStr.replace(/\n/g, '\\n');
+
+    try {
+      return JSON.parse(jsonStr);
+    } catch (e2) {
+      console.error('JSON parse failed after cleanup:', e2.message);
+      console.error('Attempted to parse:', jsonStr.substring(0, 200));
+      return null;
+    }
+  }
+}
+
 // Generate interview questions based on resume and role
 const generateQuestions = async (resumeText, role) => {
   if (!client) {
@@ -67,25 +101,34 @@ const evaluateAnswer = async (question, answer) => {
       messages: [
         {
           role: 'system',
-          content: 'You are an interview evaluator. Evaluate the answer and return a JSON object with this exact format: {"score": <number 1-10>, "feedback": "<detailed feedback>", "tags": [{"name": "<criteria>", "rating": "<Good/Needs Improvement/Excellent>"}]}. Return ONLY the JSON, no other text.',
+          content: 'You are an interview evaluator. Evaluate the answer and return a JSON object.',
         },
         {
           role: 'user',
-          content: `Question: ${question}\nAnswer: ${answer}`,
+          content: `Question: ${question}\nAnswer: ${answer}\n\nEvaluate this answer and return a JSON object with this EXACT format:\n{"score": 7, "feedback": "your detailed feedback here", "tags": [{"name": "Clarity", "rating": "Good"}, {"name": "Examples", "rating": "Good"}, {"name": "Technical Knowledge", "rating": "Good"}]}\n\nReturn ONLY valid JSON. No extra text. Score must be 1-10.`,
         },
       ],
       temperature: 0.3,
       max_tokens: 500,
+      response_format: { type: 'json_object' },
     });
     const text = response.choices[0].message.content;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    const result = safeJsonParse(text);
+    if (result && typeof result.score === 'number') {
+      // Ensure tags array exists with proper format
+      if (!result.tags || !Array.isArray(result.tags)) {
+        result.tags = [
+          { name: 'Clarity', rating: 'Good' },
+          { name: 'Examples', rating: 'Good' },
+          { name: 'Technical Knowledge', rating: 'Good' },
+        ];
+      }
+      return result;
     }
-    return { score: 5, feedback: 'Could not parse evaluation.', tags: [] };
+    return { score: 5, feedback: text || 'Could not parse evaluation.', tags: [] };
   } catch (error) {
     console.error('Groq Error:', error.message);
-    return { score: 5, feedback: 'Could not evaluate answer.', tags: [] };
+    return { score: 5, feedback: 'Could not evaluate answer. Please try again.', tags: [] };
   }
 };
 
@@ -118,33 +161,45 @@ const generateCodingProblem = async (role, difficulty) => {
           role: 'user',
           content: `Generate a ${difficulty || 'Easy'} coding interview problem for a ${role || 'Software Engineer'} role.
 
-Return ONLY a JSON object with this exact format:
+Return a JSON object with this EXACT format:
 {
-  "title": "<problem title>",
-  "difficulty": "<Easy/Medium/Hard>",
-  "description": "<problem description>",
-  "examples": [{"input": "<input>", "output": "<output>", "explanation": "<explanation>"}],
-  "constraints": ["<constraint1>", "<constraint2>"],
-  "starterCode": "<JavaScript starter code with function signature and comment>"
+  "title": "Problem Title",
+  "difficulty": "Easy",
+  "description": "Problem description here",
+  "examples": [{"input": "input here", "output": "output here", "explanation": "explanation here"}],
+  "constraints": ["constraint 1", "constraint 2"],
+  "starterCode": "function solution() {\\n  // Write your code here\\n}"
 }
 
-Return ONLY the JSON, no other text.`,
+Return ONLY valid JSON. No markdown. No extra text.`,
         },
       ],
       temperature: 0.7,
       max_tokens: 800,
+      response_format: { type: 'json_object' },
     });
     const text = response.choices[0].message.content;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const problem = JSON.parse(jsonMatch[0]);
+    const problem = safeJsonParse(text);
+    if (problem && problem.title && problem.description) {
       problem.id = Date.now();
+      // Ensure examples array exists
+      if (!problem.examples || !Array.isArray(problem.examples)) {
+        problem.examples = [{ input: 'Example input', output: 'Example output', explanation: 'Explanation' }];
+      }
+      // Ensure constraints array exists
+      if (!problem.constraints || !Array.isArray(problem.constraints)) {
+        problem.constraints = ['No specific constraints'];
+      }
+      // Ensure starterCode exists
+      if (!problem.starterCode) {
+        problem.starterCode = 'function solution() {\n  // Write your code here\n}';
+      }
       return problem;
     }
     return {
       id: 1, title: 'Two Sum', difficulty: 'Easy',
       description: 'Given an array of integers, return indices of two numbers that add up to target.',
-      examples: [{ input: 'nums = [2,7,11,15], target = 9', output: '[0,1]' }],
+      examples: [{ input: 'nums = [2,7,11,15], target = 9', output: '[0,1]', explanation: 'nums[0] + nums[1] == 9' }],
       constraints: ['2 <= nums.length <= 10^4'],
       starterCode: 'function twoSum(nums, target) {\n  // Write your code here\n}',
     };
@@ -153,7 +208,7 @@ Return ONLY the JSON, no other text.`,
     return {
       id: 1, title: 'Two Sum', difficulty: 'Easy',
       description: 'Given an array of integers, return indices of two numbers that add up to target.',
-      examples: [{ input: 'nums = [2,7,11,15], target = 9', output: '[0,1]' }],
+      examples: [{ input: 'nums = [2,7,11,15], target = 9', output: '[0,1]', explanation: 'nums[0] + nums[1] == 9' }],
       constraints: ['2 <= nums.length <= 10^4'],
       starterCode: 'function twoSum(nums, target) {\n  // Write your code here\n}',
     };
