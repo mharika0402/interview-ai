@@ -1,0 +1,86 @@
+.resume-upload {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.resume-upload h2 {
+  font-size: 1.6rem;
+  margin-bottom: 8px;
+}
+
+.resume-upload > p {
+  color: var(--text-secondary);
+  margin-bottom: 28px;
+}
+
+.upload-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 48px 24px;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.upload-zone:hover,
+.upload-zone.dragging {
+  border-color: var(--primary);
+  background: rgba(108, 92, 231, 0.05);
+}
+
+.upload-zone.has-file {
+  border-style: solid;
+  border-color: var(--success);
+  background: rgba(0, 184, 148, 0.05);
+}
+
+.upload-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-icon {
+  font-size: 3rem;
+  color: var(--primary-light);
+  margin-bottom: 8px;
+}
+
+.upload-prompt p {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.upload-prompt span {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.file-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.file-icon {
+  font-size: 1.5rem;
+  color: var(--success);
+}
+
+.file-name {
+  font-weight: 500;
+}
+
+.file-remove {
+  background: rgba(225, 112, 85, 0.1);
+  color: var(--danger);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 1.1rem;
+}
+
+.file-remove:hover {
+  background: rgba(225, 112, 85, 0.2);
+}
